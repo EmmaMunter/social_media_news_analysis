@@ -1,0 +1,14 @@
+# These seem to have been obsoleted by the volumes/ directory
+/browser-container/container/telegram_1.cookies.sqlite
+/browser-container/container/telegram_1.https+++web.telegram.org^firstPartyDomain=telegram.org/
+/browser-container/container/telegram_1.profile.default/
+
+# This is the same old-ish profile as the above, but has an old-ish format
+/browser-container/volumes/telegram_1.test.data.sqlite
+
+# These are the new-type format files that have been sent for use elsewhere.
+/browser-container/volumes/telegram.login.+*.data.sqlite.sent-to-remote
+
+
+# Don't include the hidden service creds
+/onion-data-receiver/hidden_service.orig/

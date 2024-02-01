@@ -1,0 +1,8 @@
+[
+	{
+		"decision": "I use Telegram Web K, not A.",
+		"justifications": [
+			"Loading the URL of a chat works correctly when manually navigating to the URL. This simplifies the automation, as it does not depend on faking user inputs to get there."
+		]
+	}
+]

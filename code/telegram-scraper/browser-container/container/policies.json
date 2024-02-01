@@ -1,0 +1,24 @@
+{
+	"policies": {
+		"ManagedBookmarks": [
+			{
+				"url": "https://en.wikipedia.org/",
+				"name": "Wikipedia"
+			}
+		],
+		"Preferences": {
+			"extensions.torlauncher.quickstart": {
+				"Value": true,
+				"Status": "user"
+			},
+			"extensions.torlauncher.prompt_at_startup": {
+				"Value": false,
+				"Status": "user"
+			},
+			"browser.privatebrowsing.autostart": {
+				"Value": false,
+				"Status": "user"
+			}
+		}
+	}
+}

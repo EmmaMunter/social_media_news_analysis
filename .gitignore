@@ -1,0 +1,27 @@
+# Ephemeral
+/.cas/
+
+# Temporary
+/tmp/
+/geckodriver.log
+
+# Build artifacts and local mirrors, plus random things that are probably not needed after all
+/data/venvs/
+/data/dynamodb/
+/data/misc/
+
+# Custom caches
+/data/request_cache
+/data/vocab_request_cache
+/data/.QUICK_CACHE.unified_measurements
+/data/.QUICK_CACHE.vocabs
+
+# Temporary backups
+/data/accounts/cookies/*.cookies.sqlite.old
+
+# Seperate repos that just happen to be nested here to keep things organized
+/code/llama/
+/code/llama-cpu/
+
+# Caches
+__pycache__/
