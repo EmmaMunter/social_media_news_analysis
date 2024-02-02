@@ -15,6 +15,8 @@
 /data/vocab_request_cache
 /data/.QUICK_CACHE.unified_measurements
 /data/.QUICK_CACHE.vocabs
+/data/final_results.json
+/data/final_results.json.v*
 
 # Temporary backups
 /data/accounts/cookies/*.cookies.sqlite.old

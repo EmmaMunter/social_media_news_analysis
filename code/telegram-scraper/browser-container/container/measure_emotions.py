@@ -64,6 +64,14 @@ FEATURES = [
 		and any(alt in text.lower() for alt in ('евреи', 'eврейск', 'иудаизм', 'еврей', 'иудей'))
 		and not any(alt in text.lower() for alt in ('израил', 'газа', 'палестин'))
 	),
+	lambda text: (
+		'украин' in text.lower()
+		and any(alt in text.lower() for alt in ('чеченцы', 'чеченская', 'чечня', 'чеченец'))
+	),
+	lambda text: (
+		'россия' in text.lower()
+		and any(alt in text.lower() for alt in ('чеченцы', 'чеченская', 'чечня', 'чеченец'))	
+	),
 ]
 
 ANALYSIS_FEATURES = [
@@ -400,7 +408,7 @@ def get_raw_measurements(heuristics):
 	for filename in glob_files('*/*.comments.textcontents.json'):
 	# for filename in ('readovkanews/4307796430.comments.textcontents.json',):
 		file_progress_counter += 1
-		if IS_QUICK_RUN and file_progress_counter < 6:
+		if IS_QUICK_RUN and file_progress_counter < 102:
 			continue
 		with open(sys.argv[2] + '/' + filename, 'r') as file:
 			bubbles = json.load(file)
@@ -437,12 +445,12 @@ def get_raw_measurements(heuristics):
 					total_counter += 1
 					if total_counter % 100 == 0:
 						print(f"selected: {len(selected_bubbles)}\ttotal: {total_counter}\tfiltered_counter: {filtered_counter}")
-					if IS_QUICK_RUN and total_counter > 100000:
-						return selected_bubbles
+					# if IS_QUICK_RUN and total_counter > 100000:
+					# 	return selected_bubbles
 
 		print('files processed:', file_progress_counter)
 		print(f"selected: {len(selected_bubbles)}\ttotal: {total_counter}\tfiltered_counter: {filtered_counter}")
-		if IS_QUICK_RUN and file_progress_counter > 30:
+		if IS_QUICK_RUN and file_progress_counter > 103:
 			return selected_bubbles
 
 	return selected_bubbles
@@ -509,6 +517,7 @@ def get_model_vocabs():
 
 def project_onto_labels(raw_measurements, vocabs):
 	results = {}
+	print(f"len(raw_measurements): {len(raw_measurements)}.")
 	for model in MODELS:
 		vocab = vocabs[model]
 		# Note: the value of labels that aren't in the vocab is represented as None here.
@@ -525,6 +534,14 @@ def project_onto_labels(raw_measurements, vocabs):
 				else:
 					results[message_id][(model, heuristic)] = UnifiedMeasurement(raw_measurement_content.textcontent, [raw_measurement_content.logits[token_index] if token_index is not None else None for (label, token_index) in labels_zipped])
 
+	# # Make all sets of logits None when part already are
+	# for model in MODELS:
+	# 	for message_id, raw_measurement in raw_measurements.items():
+	# 		for (model, heuristic), raw_measurement_content in raw_measurement.items():
+	# 			if raw_measurement_content.logits is None:
+	# 				results[message_id][(model, heuristic)] = UnifiedMeasurement(raw_measurement_content.textcontent, None)
+
+	print(f"len(results): {len(results)}.")
 	return results
 
 def fit_normalization_lines(unified_measurements, segmented_by):
@@ -556,18 +573,47 @@ def fit_normalization_lines(unified_measurements, segmented_by):
 				if unified_logits is None:
 					# Note: this depends on the knowledge that this is going to be None every time!
 					#       if that assumption no longer holds, this will introduce bugs!
-					continue
+					# continue
+					segmented_values[(model, heuristic, label_group)].append(
+						(textcontent, None)
+					)
 				else:
 					segmented_values[(model, heuristic, label_group)].append(
-						[unified_logits[LABELS.index(label)].detach().numpy() for label in label_group]
+						(textcontent, [unified_logits[LABELS.index(label)].detach().numpy() for label in label_group])
 					)
 
+	print('═'*80)
 	from pprint import pprint; pprint(segmented_values)
+
+	# # Set None values to None across the board
+	# segmented_nonevals = np.array([
+	# 	[
+	# 		(subval[1] is None) for subval in segmented_value
+	# 	] for key, segmented_value in segmented_values.items()
+	# ])
+	# segmented_noneval_totals = np.sum(segmented_nonevals, axis=0)
+
+	if not len(set(len(segmented_value) for segmented_value in segmented_values.values())) == 1:
+		# There's segments of different lengths.
+		# This shouldn't be able to happen
+		raise ValueError('Unequal sizes of lists of unified logits')
+	# TODO: set stuff to None
+	# for index, segmented_noneval_total in enumerate(segmented_noneval_totals):
+	segments = tuple(segmented_values.values())
+	# It must either have no, or all, Nones.
+	clean_none_counts = (0, len(segments))
+	for index in range(len(segments[0])):
+		if not int(sum(segment[index][1] is None for segment in segments)) in clean_none_counts:
+			for segment in segments:
+				segment[index] = (segment[index][0], None)
+		# if segmented_noneval_total > 0 and segmented_noneval_total < len(segmented_nonevals):
+	
 
 	# Fit a direction
 	fitted_measurements = {}
 	for key, segmented_value in segmented_values.items():
-		datapoints_combined = np.array(segmented_value)
+		textcontents = np.array([subval[0] for subval in segmented_value if subval[1] is not None])
+		datapoints_combined = np.array([subval[1] for subval in segmented_value if subval[1] is not None])
 		print(key)
 		print(datapoints_combined)
 		values = minimize_squared_errors(datapoints_combined)
@@ -575,7 +621,7 @@ def fit_normalization_lines(unified_measurements, segmented_by):
 		sorted_indices = np.array([sorted_values.index(value) for value in values])
 		percentiles = sorted_indices/len(sorted_indices) + 0.5/len(sorted_indices)
 		print(percentiles)
-		fitted_measurements[key] = percentiles
+		fitted_measurements[key] = (textcontents, percentiles)
 
 	return fitted_measurements
 
@@ -601,56 +647,94 @@ def main():
 			quick_cache_store(vocabs, '.vocabs')
 
 	# from pprint import pprint; pprint(unified_measurements)
+	lens = [len(measurements) for measurements in unified_measurements.values()]
+	if not min(lens) == max(lens):
+		raise ValueError('There are differing sizes')
+	# # nones = [int(sum(print(measurement) is None for measurement in measurements)) for measurements in unified_measurements.values()]
+	# # nones = [int(sum(print(measurement) is None for measurement in measurements[1])) for measurements in unified_measurements.values()]
+	# # if not min(nones) == max(nones):
+	# # 	quit("alright!")
+	# # nones = [int(sum(print(measurement) is None for measurement in measurements[1])) for measurements in unified_measurements.values()]
+	# for measurements in unified_measurements.values():
+	# 	print()
+	# 	print("measurements:")
+	# 	print(measurements)
+	# # nones = [int(sum(print(measurement) is None for measurement in measurements[1])) for measurements in unified_measurements.values()]
+	# for keys, measurements in unified_measurements.items():
+	# 	print()
+	# 	print("keys:")
+	# 	print(keys)
+	# # for index in range(len(unified_measurements))
+	# from pprint import pprint; pprint(unified_measurements)
 
 	fitted_measurements = fit_normalization_lines(
 		unified_measurements,
 		segmented_by=('model', 'heuristic', 'label_group'),
 	)
 
-	from pprint import pprint; pprint(fitted_measurements)
+	# from pprint import pprint; pprint(fitted_measurements)
 	feature_results_list = []
-	for message_id, post_measurements in unified_measurements.items():
-		(model, heuristic), (textcontent, unified_logits) = next(iter(post_measurements.items()))
-		# print(model)
-		# print(heuristic)
-		# print(textcontent)
-		feature_results_list.append([feature(textcontent) for feature in FEATURES])
-		# for (model, heuristic), (textcontent, unified_logits) in post_measurements.items():
-		# 	# print(model)
-		# 	# print(heuristic)
-		# 	# print(textcontent)
-		# 	feature_results_list.append([feature(textcontent) for feature in FEATURES])
-		# 	break
+	# for message_id, post_measurements in unified_measurements.items():
+	# 	(model, heuristic), (textcontent, unified_logits) = next(iter(post_measurements.items()))
+	# 	if unified_logits is not None:
+	# 		# print(model)
+	# 		# print(heuristic)
+	# 		# print(textcontent)
+	# 		feature_results_list.append([feature(textcontent) for feature in FEATURES])
+	# 		# for (model, heuristic), (textcontent, unified_logits) in post_measurements.items():
+	# 		# 	# print(model)
+	# 		# 	# print(heuristic)
+	# 		# 	# print(textcontent)
+	# 		# 	feature_results_list.append([feature(textcontent) for feature in FEATURES])
+	# 		# 	break
+	for (model, heuristic, label_group), (textcontents, percentiles) in fitted_measurements.items():
+		for textcontent in textcontents:
+			feature_results_list.append([feature(textcontent) for feature in FEATURES])
+		break
 	feature_results = np.array(feature_results_list)
-	print(feature_results)
+	# print(feature_results)
 
 	t = (True,)
 	# f = (False,)
 	a = (True,False,)
 
 	feature_characterizations = (
-		(a,a,a,a),
-		(t,a,a,a),
-		(a,t,a,a),
-		(a,a,t,a),
-		(a,a,a,t),
-		(t,t,a,a),
-		(a,a,t,t),
-		(t,a,t,a),
-		(a,t,a,t),
-		(t,t,t,t),
+		(a,a,a,a,a,a),
+		(t,a,a,a,a,a),
+		(a,t,a,a,a,a),
+		(a,a,t,a,a,a),
+		(a,a,a,t,a,a),
+		(t,t,a,a,a,a),
+		(a,a,t,t,a,a),
+		(t,a,t,a,a,a),
+		(a,t,a,t,a,a),
+		(t,t,t,t,a,a),
+		(a,a,a,a,t,a),
+		(a,a,a,a,a,t),
+		(a,a,a,a,t,t),
+		(t,a,a,a,t,a),
+		(a,t,a,a,t,a),
+		(t,t,a,a,t,a),
+		(a,a,t,a,a,t),
+		(a,a,a,t,a,t),
+		(a,a,t,t,a,t),
+		(t,a,t,a,t,a),
+		(a,t,a,t,t,a),
+		(t,a,t,a,a,t),
+		(a,t,a,t,a,t),
+		(t,t,t,t,t,t),
 	)
 
 	def matches(pattern,result):
 		return all((val in cond) for val, cond in zip(result,pattern))
 
 	feature_matches = np.array([[matches(pattern,feature_result) for feature_result in feature_results] for pattern in feature_characterizations])
-	print(feature_matches)
+	# print(feature_matches)
 
 
 	total_results = []
 	for feature_match_base, feature_characterization in zip(feature_matches, feature_characterizations):
-		for (model, heuristic, label_group), fitted_measurement in fitted_measurements.items():
+		for (model, heuristic, label_group), (textcontents, fitted_measurement) in fitted_measurements.items():
 			for invert in (False, True):
 				if invert:
 					feature_match = np.logical_not(feature_match_base)
@@ -658,14 +742,16 @@ def main():
 					feature_match = feature_match_base
 				total_results.append({
 					'feature_characterization': feature_characterization,
+					'invert': invert,
 					'model': model,
 					'hueristic': heuristic,
 					'label_group': label_group,
-					'mean': fitted_measurement[feature_match],
-					'count': sum(feature_match),
+					'mean': np.mean(fitted_measurement[feature_match]),
+					'count': int(sum(feature_match)),
 				})
 
-	from pprint import pprint; pprint(total_results)
+	with open('../../data/final_results.json', 'w') as outfile:
+		json.dump(total_results, outfile)
 
 	print("Measurements done!")
 
